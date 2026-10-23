@@ -6,11 +6,11 @@ torch.manual_seed(123)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-tokenizer = AutoTokenizer.from_pretrained("jdqqjr/vicuna-7b-v1.5-uncensored")
+tokenizer = AutoTokenizer.from_pretrained("jdqqjr/vicuna-7b-v1.5-uncensored", token=HF_TOKEN)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "left"  # required for correct batched causal generation
 
-model = AutoModelForCausalLM.from_pretrained("jdqqjr/vicuna-7b-v1.5-uncensored", device_map="auto")
+model = AutoModelForCausalLM.from_pretrained("jdqqjr/vicuna-7b-v1.5-uncensored", device_map="auto", token=HF_TOKEN)
 messages = [
     {"role": "user", "content": ""},
 ]
