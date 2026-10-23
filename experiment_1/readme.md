@@ -1,0 +1,1 @@
+This experiment analyzes the refusal rate and rate of harmful content in responses for several models under different quantization conditions
