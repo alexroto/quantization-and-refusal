@@ -3,6 +3,7 @@ datasets:
     dataset_id: tatsu-lab/alpaca
     file_path: null
     column: instruction
+    input_column: input
 
   adversarial:
     dataset_id: yatin-superintelligence/Adversarial-Agent-Intent-Safety-Analysis-240K
@@ -11,12 +12,12 @@ datasets:
 
   harmful:
     dataset_id: null
-    file_path: data/harmful
-    column: target
+    file_path: data/harmful/harmful_behaviors.csv
+    column: goal
 
   harmless_with_sensitive_words:
     dataset_id: null
-    file_path: data/harmless_prompts_with_sensitive_words
+    file_path: data/harmless_prompts_with_sensitive_words/harmless_queries_with_sensitive_words.csv
     column: query
 
 

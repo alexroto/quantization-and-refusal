@@ -1,4 +1,4 @@
-# Model-dependent settings for baseline_refusal.py.
+# Model-dependent settings shared by experiment runners.
 #
 # Every model inherits `defaults`; anything set under a model overrides it
 # (`generation` is merged key by key, so you can override just one sampling param).
