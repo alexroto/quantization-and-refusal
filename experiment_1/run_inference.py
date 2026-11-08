@@ -48,8 +48,8 @@ def build_parser():
     parser.add_argument("--model-config", type=Path, default=ROOT / "model_configs.yaml")
     parser.add_argument("--dataset-config", type=Path, default=ROOT / "datasets.yaml")
     parser.add_argument("--output", type=Path,
-                        help="JSONL filename within data/output/<model>/; defaults to "
-                             "<dataset>_<quantization>_seed<seed>.jsonl")
+                        help="JSONL filename within data/output/<model>/<quantization>/; defaults to "
+                             "<dataset>_seed<seed>.jsonl")
     parser.add_argument("--batch-size", type=positive_int)
     parser.add_argument("--max-new-tokens", type=positive_int)
     parser.add_argument("--max-input-tokens", type=positive_int,
@@ -66,19 +66,23 @@ def build_parser():
 
 
 def resolve_output_path(args) -> Path:
-    """Keep each run and its metadata in the selected model's output directory."""
-    for label, value in (("model", args.model), ("dataset", args.dataset)):
+    """Keep each run and its metadata in the selected model and quantization directory."""
+    for label, value in (("model", args.model), ("dataset", args.dataset),
+                         ("quantization", args.quantization)):
         if not value or value in {".", ".."} or "/" in value or "\\" in value:
             raise ValueError(f"{label} must be a single directory-safe config key")
-    filename = args.output or Path(f"{args.dataset}_{args.quantization}_seed{args.seed}.jsonl")
+    filename = args.output or Path(f"{args.dataset}_seed{args.seed}.jsonl")
     if (filename.is_absolute() or len(filename.parts) != 1 or "\\" in str(filename)
             or filename.suffix.lower() != ".jsonl"):
         raise ValueError("--output must be a .jsonl filename, without directories; "
-                         "files are saved under data/output/<model>/")
+                         "files are saved under data/output/<model>/<quantization>/")
     model_directory = (OUTPUT_ROOT / args.model).resolve()
-    output_path = model_directory / filename
+    quantization_directory = (model_directory / args.quantization).resolve()
+    output_path = quantization_directory / filename
     if not model_directory.is_relative_to(OUTPUT_ROOT.resolve()):
         raise ValueError("Model output directory must remain inside data/output/")
+    if not quantization_directory.is_relative_to(model_directory):
+        raise ValueError("Quantization output directory must remain inside the model directory")
     if output_path.is_symlink():
         raise ValueError("Output must not be a symbolic link")
     return output_path

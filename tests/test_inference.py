@@ -143,7 +143,7 @@ class GenerationTests(unittest.TestCase):
 
 class RunnerTests(unittest.TestCase):
     def execute(self, directory, *, fail=False):
-        output = Path(directory) / 'qwen' / 'responses.jsonl'
+        output = Path(directory) / 'qwen' / 'bf16' / 'responses.jsonl'
         args = build_parser().parse_args(['--model', 'qwen', '--dataset', 'harmful',
                                          '--output', output.name, '--limit', '3', '--batch-size', '2',
                                          '--no-do-sample'])
@@ -195,7 +195,7 @@ class RunnerTests(unittest.TestCase):
                         ])
                         with patch('experiment_1.run_inference.OUTPUT_ROOT', Path(directory)):
                             self.assertEqual(resolve_output_path(args), Path(directory).resolve() / model /
-                                             f'{dataset}_{precision}_seed123.jsonl')
+                                             precision / f'{dataset}_seed123.jsonl')
 
     def test_output_cannot_escape_model_directory(self):
         for filename in ('../escape.jsonl', '/tmp/escape.jsonl', 'nested/run.jsonl',

@@ -89,21 +89,23 @@ are tokenized without adding a second set of special tokens, following the
 
 ## Outputs
 
-Completions are always saved under `data/output/<model_name>/`, where
+Completions are always saved under `data/output/<model_name>/<quantization>/`, where
 `<model_name>` is the model config key passed to `--model`. The directory is
-created automatically. Default filenames include the dataset, precision, and
+created automatically. Default filenames include the dataset and
 seed, for example:
 
 ```text
 data/output/llama2/
-  harmful_bf16_seed123.jsonl
-  harmful_bf16_seed123.jsonl.metadata.json
-  harmful_int4_seed123.jsonl
-  harmful_int4_seed123.jsonl.metadata.json
+  bf16/
+    harmful_seed123.jsonl
+    harmful_seed123.jsonl.metadata.json
+  int4/
+    harmful_seed123.jsonl
+    harmful_seed123.jsonl.metadata.json
 ```
 
 Use `--output another_run.jsonl` to choose a different filename in that same
-model directory. Absolute paths and directory components are rejected.
+model/quantization directory. Absolute paths and directory components are rejected.
 Generated outputs are excluded from version control. Both harmful-content
 classifiers and LLM judges can read the saved `prompt` / `completion` pairs;
 this change does not run or modify either evaluation framework.
