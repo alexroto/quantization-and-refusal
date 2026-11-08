@@ -1,14 +1,14 @@
 """Model loading and chat formatting shared across experiments."""
 import os
 
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
 from utils.model_config import ModelConfig
 
 
 def load_model_and_tokenizer(cfg: ModelConfig, *, quantization: str = "none",
                              device: str = "auto"):
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-
     if quantization not in {"none", "bf16", "int8", "int4"}:
         raise ValueError(f"Unsupported quantization: {quantization}")
     if device == "auto":

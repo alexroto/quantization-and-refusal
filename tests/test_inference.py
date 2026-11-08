@@ -1,13 +1,12 @@
 """Offline contract tests: no model downloads or GPU required."""
 import json
 from pathlib import Path
-import sys
 import tempfile
 import types
 import unittest
 from unittest.mock import MagicMock, patch
 
-from experiment_1.run_inference import build_parser, run
+from experiment_1.run_inference import build_parser, resolve_output_path, run
 from utils.dataset_utils import DatasetConfig, load_dataset_config, load_prompt_records
 from utils.generation_utils import generate_responses
 from utils.model_config import ModelConfig, load_model_config
@@ -58,7 +57,7 @@ class ConfigAndDatasetTests(unittest.TestCase):
             {'instruction': 'Summarize', 'input': 'some text', 'label': 1},
             {'instruction': 'Hello', 'input': '', 'label': 0},
         ]))
-        with patch.dict(sys.modules, {'datasets': types.SimpleNamespace(load_dataset=loader)}):
+        with patch('utils.dataset_utils.load_dataset', loader):
             cfg = DatasetConfig(column='instruction', dataset_id='test/data', subset='subset',
                                 split='test', revision='abc', input_column='input')
             rows = load_prompt_records(cfg)
@@ -94,7 +93,7 @@ class GenerationTests(unittest.TestCase):
         outputs = model.generate.return_value
         cfg = ModelConfig('test/model', generation={'max_new_tokens': 4, 'do_sample': False,
                                                     'temperature': 0.7, 'top_p': 0.9})
-        with patch.dict(sys.modules, {'torch': torch}):
+        with patch('utils.generation_utils.torch', torch):
             rows = generate_responses(model, tokenizer, cfg, ['a', 'b'])
         self.assertFalse(tokenizer.call_args.kwargs['add_special_tokens'])
         self.assertNotIn('truncation', tokenizer.call_args.kwargs)
@@ -105,7 +104,7 @@ class GenerationTests(unittest.TestCase):
                                    'input_tokens': 5})
         tokenizer.apply_chat_template.side_effect = ['formatted a', 'formatted b']
         model.config.max_position_embeddings = 10
-        with patch.dict(sys.modules, {'torch': torch}):
+        with patch('utils.generation_utils.torch', torch):
             with self.assertRaisesRegex(ValueError, 'context window'):
                 generate_responses(model, tokenizer, cfg, ['a', 'b'])
 
@@ -120,7 +119,10 @@ class GenerationTests(unittest.TestCase):
         tokenizer = transformers.AutoTokenizer.from_pretrained.return_value
         tokenizer.pad_token_id = 0
         model = transformers.AutoModelForCausalLM.from_pretrained.return_value
-        with patch.dict(sys.modules, {'torch': torch, 'transformers': transformers}):
+        with patch.multiple('utils.model_utils', torch=torch,
+                            AutoModelForCausalLM=transformers.AutoModelForCausalLM,
+                            AutoTokenizer=transformers.AutoTokenizer,
+                            BitsAndBytesConfig=transformers.BitsAndBytesConfig):
             loaded, _ = load_model_and_tokenizer(ModelConfig('test/model'), quantization='int4')
         self.assertIs(loaded, model)
         model.to.assert_not_called()
@@ -131,16 +133,19 @@ class GenerationTests(unittest.TestCase):
         self.assertFalse(quant['load_in_8bit'])
         self.assertEqual(quant['bnb_4bit_quant_type'], 'nf4')
         torch.device.return_value = types.SimpleNamespace(type='cpu')
-        with patch.dict(sys.modules, {'torch': torch, 'transformers': transformers}):
+        with patch.multiple('utils.model_utils', torch=torch,
+                            AutoModelForCausalLM=transformers.AutoModelForCausalLM,
+                            AutoTokenizer=transformers.AutoTokenizer,
+                            BitsAndBytesConfig=transformers.BitsAndBytesConfig):
             with self.assertRaisesRegex(ValueError, 'require a CUDA'):
                 load_model_and_tokenizer(ModelConfig('test/model'), quantization='int8', device='cpu')
 
 
 class RunnerTests(unittest.TestCase):
     def execute(self, directory, *, fail=False):
-        output = Path(directory) / 'responses.jsonl'
+        output = Path(directory) / 'qwen' / 'responses.jsonl'
         args = build_parser().parse_args(['--model', 'qwen', '--dataset', 'harmful',
-                                         '--output', str(output), '--limit', '3', '--batch-size', '2',
+                                         '--output', output.name, '--limit', '3', '--batch-size', '2',
                                          '--no-do-sample'])
         model, tokenizer = MagicMock(), MagicMock()
         model.config._commit_hash = 'commit'
@@ -152,7 +157,8 @@ class RunnerTests(unittest.TestCase):
                 raise RuntimeError('generation failed')
             return [{'completion': f'response {p}', 'formatted_prompt': p, 'input_tokens': 5}
                     for p in prompts]
-        with patch.dict(sys.modules, {'transformers': types.SimpleNamespace(set_seed=MagicMock())}), \
+        with patch('experiment_1.run_inference.set_seed'), \
+             patch('experiment_1.run_inference.OUTPUT_ROOT', Path(directory)), \
              patch('experiment_1.run_inference.load_model_and_tokenizer', return_value=(model, tokenizer)), \
              patch('experiment_1.run_inference.generate_responses', side_effect=respond):
             if fail:
@@ -174,8 +180,35 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(metadata['completed_rows'], 3)
             self.assertFalse(metadata['model_config']['generation']['do_sample'])
             self.assertEqual(len(metadata['dataset_sha256']), 64)
-            with self.assertRaises(FileExistsError):
-                run(args)
+            self.assertEqual(Path(metadata['output_path']), output.resolve())
+            with patch('experiment_1.run_inference.OUTPUT_ROOT', Path(directory)):
+                with self.assertRaises(FileExistsError):
+                    run(args)
+
+    def test_default_output_groups_model_dataset_and_precision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for model in ('llama2', 'qwen', 'vicuna'):
+                for dataset in ('harmful', 'harmless'):
+                    for precision in ('bf16', 'int8', 'int4'):
+                        args = build_parser().parse_args([
+                            '--model', model, '--dataset', dataset, '--quantization', precision,
+                        ])
+                        with patch('experiment_1.run_inference.OUTPUT_ROOT', Path(directory)):
+                            self.assertEqual(resolve_output_path(args), Path(directory).resolve() / model /
+                                             f'{dataset}_{precision}_seed123.jsonl')
+
+    def test_output_cannot_escape_model_directory(self):
+        for filename in ('../escape.jsonl', '/tmp/escape.jsonl', 'nested/run.jsonl',
+                         'nested\\run.jsonl', 'responses.csv'):
+            args = build_parser().parse_args([
+                '--model', 'qwen', '--dataset', 'harmful', '--output', filename,
+            ])
+            with self.subTest(filename=filename), self.assertRaises(ValueError):
+                resolve_output_path(args)
+        for model in ('..', '../qwen', '/tmp/qwen'):
+            args = build_parser().parse_args(['--model', model, '--dataset', 'harmful'])
+            with self.subTest(model=model), self.assertRaises(ValueError):
+                resolve_output_path(args)
 
     def test_failure_preserves_completed_batches_and_records_status(self):
         with tempfile.TemporaryDirectory() as directory:

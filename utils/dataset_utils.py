@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from datasets import load_dataset
+
 from utils.config_utils import load_named_config
 
 
@@ -45,7 +47,6 @@ def load_prompt_records(config: DatasetConfig, *, offset: int = 0,
             columns = reader.fieldnames or []
             rows = list(reader)
     else:
-        from datasets import load_dataset
         dataset = load_dataset(config.dataset_id, name=config.subset,
                                split=config.split, revision=config.revision)
         columns = dataset.column_names

@@ -13,12 +13,15 @@ from pathlib import Path
 import platform
 import uuid
 
+from transformers import set_seed
+
 from utils.dataset_utils import load_dataset_config, load_prompt_records
 from utils.generation_utils import generate_responses
 from utils.model_config import load_model_config
 from utils.model_utils import load_model_and_tokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_ROOT = ROOT / "data" / "output"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -44,7 +47,9 @@ def build_parser():
                         help="INT8 uses LLM.int8; INT4 uses bitsandbytes NF4 weights")
     parser.add_argument("--model-config", type=Path, default=ROOT / "model_configs.yaml")
     parser.add_argument("--dataset-config", type=Path, default=ROOT / "datasets.yaml")
-    parser.add_argument("--output", type=Path, required=True, help="New output JSONL file")
+    parser.add_argument("--output", type=Path,
+                        help="JSONL filename within data/output/<model>/; defaults to "
+                             "<dataset>_<quantization>_seed<seed>.jsonl")
     parser.add_argument("--batch-size", type=positive_int)
     parser.add_argument("--max-new-tokens", type=positive_int)
     parser.add_argument("--max-input-tokens", type=positive_int,
@@ -57,6 +62,26 @@ def build_parser():
     parser.add_argument("--do-sample", action=argparse.BooleanOptionalAction, default=None,
                         help="Override YAML decoding policy; --no-do-sample selects greedy decoding")
     return parser
+
+
+
+def resolve_output_path(args) -> Path:
+    """Keep each run and its metadata in the selected model's output directory."""
+    for label, value in (("model", args.model), ("dataset", args.dataset)):
+        if not value or value in {".", ".."} or "/" in value or "\\" in value:
+            raise ValueError(f"{label} must be a single directory-safe config key")
+    filename = args.output or Path(f"{args.dataset}_{args.quantization}_seed{args.seed}.jsonl")
+    if (filename.is_absolute() or len(filename.parts) != 1 or "\\" in str(filename)
+            or filename.suffix.lower() != ".jsonl"):
+        raise ValueError("--output must be a .jsonl filename, without directories; "
+                         "files are saved under data/output/<model>/")
+    model_directory = (OUTPUT_ROOT / args.model).resolve()
+    output_path = model_directory / filename
+    if not model_directory.is_relative_to(OUTPUT_ROOT.resolve()):
+        raise ValueError("Model output directory must remain inside data/output/")
+    if output_path.is_symlink():
+        raise ValueError("Output must not be a symbolic link")
+    return output_path
 
 
 def package_versions():
@@ -89,9 +114,11 @@ def run(args):
         cfg.dtype = "bfloat16"
     if args.split is not None:
         dataset_cfg.split = args.split
-    metadata_path = args.output.with_suffix(args.output.suffix + ".metadata.json")
-    if args.output.exists() or metadata_path.exists():
-        raise FileExistsError(f"Output or metadata already exists for {args.output}; use a new path")
+    output_path = resolve_output_path(args)
+    metadata_path = output_path.with_suffix(output_path.suffix + ".metadata.json")
+    if output_path.exists() or metadata_path.exists():
+        raise FileExistsError(f"Output or metadata already exists for {output_path}; "
+                              "use a new --output filename")
     records = load_prompt_records(dataset_cfg, offset=args.offset, limit=args.limit)
     # Includes source labels and original row indices, so precision runs can be paired.
     fingerprint = hashlib.sha256(json.dumps(records, sort_keys=True, ensure_ascii=False,
@@ -102,14 +129,15 @@ def run(args):
         "model": args.model, "dataset": args.dataset, "quantization": args.quantization,
         "model_config": asdict(cfg), "dataset_config": asdict(dataset_cfg),
         "dataset_sha256": fingerprint, "arguments": vars(args), "versions": package_versions(),
+        "output_path": str(output_path),
         "quantization_method": {"bf16": "unquantized bfloat16", "int8": "bitsandbytes LLM.int8",
                                 "int4": "bitsandbytes NF4 (no double quantization)"}[args.quantization],
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("x", encoding="utf-8") as output:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    LOGGER.info("Saving completions to %s", output_path)
+    with output_path.open("x", encoding="utf-8") as output:
         write_metadata(metadata_path, metadata)
         try:
-            from transformers import set_seed
             set_seed(args.seed)
             LOGGER.info("Loading %s in %s; %d prompts", cfg.model_id, args.quantization, len(records))
             model, tokenizer = load_model_and_tokenizer(cfg, quantization=args.quantization,
@@ -143,7 +171,7 @@ def run(args):
         finally:
             metadata["finished_at"] = datetime.now(timezone.utc).isoformat()
             write_metadata(metadata_path, metadata)
-    return args.output
+    return output_path
 
 
 def main():

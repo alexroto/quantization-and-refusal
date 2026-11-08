@@ -1,12 +1,12 @@
 """Batched generation; returns only newly generated response text."""
+import torch
+
 from utils.model_config import ModelConfig
 from utils.model_utils import format_chat_prompt
 
 
 def generate_responses(model, tokenizer, cfg: ModelConfig, prompts: list[str], *,
                        max_input_tokens: int | None = None) -> list[dict]:
-    import torch
-
     formatted = [format_chat_prompt(tokenizer, cfg, prompt) for prompt in prompts]
     tokenization = {"return_tensors": "pt", "padding": True, "add_special_tokens": False}
     if max_input_tokens is not None:

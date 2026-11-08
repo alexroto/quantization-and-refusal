@@ -17,14 +17,12 @@ python -m experiment_1.run_inference \
   --model llama2 \
   --dataset harmful \
   --quantization bf16 \
-  --output results/llama2_harmful_bf16.jsonl \
   --no-do-sample
 
 python -m experiment_1.run_inference \
   --model llama2 \
   --dataset harmful \
   --quantization int4 \
-  --output results/llama2_harmful_int4.jsonl \
   --no-do-sample
 ```
 
@@ -91,6 +89,25 @@ are tokenized without adding a second set of special tokens, following the
 
 ## Outputs
 
+Completions are always saved under `data/output/<model_name>/`, where
+`<model_name>` is the model config key passed to `--model`. The directory is
+created automatically. Default filenames include the dataset, precision, and
+seed, for example:
+
+```text
+data/output/llama2/
+  harmful_bf16_seed123.jsonl
+  harmful_bf16_seed123.jsonl.metadata.json
+  harmful_int4_seed123.jsonl
+  harmful_int4_seed123.jsonl.metadata.json
+```
+
+Use `--output another_run.jsonl` to choose a different filename in that same
+model directory. Absolute paths and directory components are rejected.
+Generated outputs are excluded from version control. Both harmful-content
+classifiers and LLM judges can read the saved `prompt` / `completion` pairs;
+this change does not run or modify either evaluation framework.
+
 Each JSONL line contains `run_id`, model/dataset keys, precision, `row_index`,
 `prompt`, `formatted_prompt`, `completion`, `input_tokens`, and the original
 `source` record. `completion` contains only generated text with special tokens
@@ -104,13 +121,16 @@ Responses flush after each batch. Failures propagate and mark metadata as failed
 already completed batches remain available. Output paths must be new, so existing
 runs cannot be silently overwritten. Automatic resume is intentionally not
 implemented: changing sampled batch boundaries can alter results. For a new
-partial run, use a new output path and an explicit offset.
+partial run, use a new `--output` filename and an explicit offset.
 
 ## Verification
 
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+The tests require the inference packages to be installed, because imports are
+at module scope. They do not download model weights or require a GPU.
 
 The offline tests cover config merging, local and Hub dataset contracts, chat
 formatting, generated-token slicing, context checks, quantized device placement,
