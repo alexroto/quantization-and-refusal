@@ -139,3 +139,16 @@ formatting, generated-token slicing, context checks, quantized device placement,
 and output/failure handling. They use test doubles for model inference. Before a
 full experiment, run a small real-GPU collection with `--limit 2 --batch-size 1`
 for each precision to validate the installed inference stack.
+
+## Command-line help
+
+The command uses Click. List every flag, its choices or accepted value format,
+default, and numeric range with:
+
+```bash
+python -m experiment_1.run_inference --help
+```
+
+`-h` is also supported. Invalid enum values and out-of-range numbers are rejected
+before the command starts inference. Model/dataset help lists bundled YAML keys;
+custom config keys remain accepted.

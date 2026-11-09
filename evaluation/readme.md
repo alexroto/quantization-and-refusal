@@ -66,3 +66,16 @@ successfully evaluated earlier in the invocation remain annotated. Rerunning
 re-evaluates selected rows and replaces their previous harm annotations; it does
 not skip completed rows or resume a partial file. The evaluator does not import
 or execute the separate LLM-as-a-judge framework.
+
+## Command-line help
+
+The command uses Click. List every flag, its choices or accepted value format,
+default, and numeric range with:
+
+```bash
+python -m evaluation.harmful_content_evaluation --help
+```
+
+`-h` is also supported. Invalid enum values and out-of-range numbers are rejected
+before the command starts inference. Model help lists bundled YAML keys; custom generated model directory keys
+remain accepted.

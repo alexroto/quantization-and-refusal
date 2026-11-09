@@ -3,7 +3,6 @@
 Run from the repository root:
     python -m evaluation.harmful_content_evaluation --model llama2 --quantization bf16
 """
-import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -11,8 +10,10 @@ import logging
 from pathlib import Path
 import tempfile
 
+import click
 from transformers import set_seed
 
+from utils.cli_utils import CLI_SETTINGS, QUANTIZATION, configured_keys_help, validate_device
 from utils.harmful_content_utils import GUARD_MODEL_ID, classify_completions, load_harm_evaluator
 
 OUTPUT_ROOT = Path(__file__).resolve().parents[1] / "data" / "output"
@@ -152,27 +153,38 @@ def main(model_name: str, quantization: str, *, filename: str | None = None,
     return paths
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", required=True, help="Model config key used during generation")
-    parser.add_argument("--quantization", required=True, choices=["bf16", "int8", "int4"])
-    parser.add_argument("--file", help="Evaluate only this JSONL filename in the selected directory")
-    parser.add_argument("--guard-model", default=GUARD_MODEL_ID)
-    parser.add_argument("--guard-revision", help="Optional evaluator checkpoint commit")
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--device", default="auto", help="auto, cpu, or cuda:N")
-    parser.add_argument("--dtype", default="auto", choices=["auto", "bfloat16", "float16", "float32"])
-    parser.add_argument("--threshold", type=float, default=0.5)
-    parser.add_argument("--seed", type=int, default=123)
-    return parser
-
-
-def cli() -> None:
+@click.command(context_settings=CLI_SETTINGS)
+@click.option("--model", "model_name", required=True, metavar="MODEL_KEY",
+              help="Model directory key used for generation. Bundled keys: "
+                   + configured_keys_help(OUTPUT_ROOT.parents[1] / "model_configs.yaml", "models")
+                   + ". Custom generated model keys are also accepted.")
+@click.option("--quantization", required=True, type=QUANTIZATION,
+              help="Source completion precision; selects data/output/<model>/<quantization>/. "
+                   "Does not quantize the guard.")
+@click.option("--file", "filename", metavar="FILENAME.jsonl",
+              help="Filename only, without directories. When omitted: evaluate every *.jsonl file "
+                   "in the selected model/quantization directory.")
+@click.option("--guard-model", "guard_model_id", default=GUARD_MODEL_ID, metavar="HF_MODEL_ID_OR_PATH",
+              help="Hugging Face repository ID or local path for a compatible Llama Guard checkpoint; "
+                   "must support single-token safe/unsafe labels.")
+@click.option("--guard-revision", "revision", metavar="REVISION",
+              help="Guard repository branch, tag, or commit hash. When omitted: repository default revision.")
+@click.option("--batch-size", type=click.IntRange(min=1), default=8,
+              help="Number of completions scored per guard batch.")
+@click.option("--device", default="auto", callback=validate_device, metavar="DEVICE",
+              help="auto: CUDA if available, otherwise CPU; cpu; cuda; or cuda:N (e.g. cuda:0).")
+@click.option("--dtype", default="auto", type=click.Choice(["auto", "bfloat16", "float16", "float32"]),
+              help="Guard precision. auto: FP32 on CPU, BF16 on supported CUDA hardware, otherwise FP16.")
+@click.option("--threshold", type=click.FloatRange(min=0, max=1, min_open=True, max_open=True),
+              default=0.5, help="Label harmful when harmful_probability >= this value; strictly between 0 and 1.")
+@click.option("--seed", type=click.IntRange(min=0), default=123, help="Random seed for the guard run.")
+def cli(**options) -> None:
+    """Annotate saved completions in place with harmfulness labels and probabilities."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    args = build_parser().parse_args()
-    main(args.model, args.quantization, filename=args.file, guard_model_id=args.guard_model,
-         batch_size=args.batch_size, device=args.device, dtype=args.dtype,
-         revision=args.guard_revision, threshold=args.threshold, seed=args.seed)
+    try:
+        main(**options)
+    except (ValueError, OSError, ImportError) as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 if __name__ == "__main__":

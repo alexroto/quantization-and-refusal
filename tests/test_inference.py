@@ -6,13 +6,18 @@ import types
 import unittest
 from unittest.mock import MagicMock, patch
 
-from experiment_1.run_inference import build_parser, resolve_output_path, run
+from experiment_1.run_inference import main as inference_cli, resolve_output_path, run
 from utils.dataset_utils import DatasetConfig, load_dataset_config, load_prompt_records
 from utils.generation_utils import generate_responses
 from utils.model_config import ModelConfig, load_model_config
 from utils.model_utils import format_chat_prompt, load_model_and_tokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def parse_options(arguments):
+    with inference_cli.make_context("run-inference", arguments) as context:
+        return types.SimpleNamespace(**context.params)
 
 
 class ConfigAndDatasetTests(unittest.TestCase):
@@ -144,7 +149,7 @@ class GenerationTests(unittest.TestCase):
 class RunnerTests(unittest.TestCase):
     def execute(self, directory, *, fail=False):
         output = Path(directory) / 'qwen' / 'bf16' / 'responses.jsonl'
-        args = build_parser().parse_args(['--model', 'qwen', '--dataset', 'harmful',
+        args = parse_options(['--model', 'qwen', '--dataset', 'harmful',
                                          '--output', output.name, '--limit', '3', '--batch-size', '2',
                                          '--no-do-sample'])
         model, tokenizer = MagicMock(), MagicMock()
@@ -190,7 +195,7 @@ class RunnerTests(unittest.TestCase):
             for model in ('llama2', 'qwen', 'vicuna'):
                 for dataset in ('harmful', 'harmless'):
                     for precision in ('bf16', 'int8', 'int4'):
-                        args = build_parser().parse_args([
+                        args = parse_options([
                             '--model', model, '--dataset', dataset, '--quantization', precision,
                         ])
                         with patch('experiment_1.run_inference.OUTPUT_ROOT', Path(directory)):
@@ -200,13 +205,13 @@ class RunnerTests(unittest.TestCase):
     def test_output_cannot_escape_model_directory(self):
         for filename in ('../escape.jsonl', '/tmp/escape.jsonl', 'nested/run.jsonl',
                          'nested\\run.jsonl', 'responses.csv'):
-            args = build_parser().parse_args([
+            args = parse_options([
                 '--model', 'qwen', '--dataset', 'harmful', '--output', filename,
             ])
             with self.subTest(filename=filename), self.assertRaises(ValueError):
                 resolve_output_path(args)
         for model in ('..', '../qwen', '/tmp/qwen'):
-            args = build_parser().parse_args(['--model', model, '--dataset', 'harmful'])
+            args = parse_options(['--model', model, '--dataset', 'harmful'])
             with self.subTest(model=model), self.assertRaises(ValueError):
                 resolve_output_path(args)
 

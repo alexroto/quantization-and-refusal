@@ -2,7 +2,6 @@
 
 Run from the repository root: python -m experiment_1.run_inference --help
 """
-import argparse
 from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
@@ -12,9 +11,13 @@ import logging
 from pathlib import Path
 import platform
 import uuid
+from types import SimpleNamespace
+
+import click
 
 from transformers import set_seed
 
+from utils.cli_utils import CLI_SETTINGS, QUANTIZATION, configured_keys_help, validate_device
 from utils.dataset_utils import load_dataset_config, load_prompt_records
 from utils.generation_utils import generate_responses
 from utils.model_config import load_model_config
@@ -23,45 +26,6 @@ from utils.model_utils import load_model_and_tokenizer
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_ROOT = ROOT / "data" / "output"
 LOGGER = logging.getLogger(__name__)
-
-
-def positive_int(value):
-    number = int(value)
-    if number < 1:
-        raise argparse.ArgumentTypeError("must be positive")
-    return number
-
-
-def nonnegative_int(value):
-    number = int(value)
-    if number < 0:
-        raise argparse.ArgumentTypeError("must be nonnegative")
-    return number
-
-
-def build_parser():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", required=True, help="Key in model config YAML")
-    parser.add_argument("--dataset", required=True, help="Key in dataset config YAML")
-    parser.add_argument("--quantization", choices=["bf16", "int8", "int4"], default="bf16",
-                        help="INT8 uses LLM.int8; INT4 uses bitsandbytes NF4 weights")
-    parser.add_argument("--model-config", type=Path, default=ROOT / "model_configs.yaml")
-    parser.add_argument("--dataset-config", type=Path, default=ROOT / "datasets.yaml")
-    parser.add_argument("--output", type=Path,
-                        help="JSONL filename within data/output/<model>/<quantization>/; defaults to "
-                             "<dataset>_seed<seed>.jsonl")
-    parser.add_argument("--batch-size", type=positive_int)
-    parser.add_argument("--max-new-tokens", type=positive_int)
-    parser.add_argument("--max-input-tokens", type=positive_int,
-                        help="Opt in to tokenizer truncation at this length")
-    parser.add_argument("--limit", type=positive_int)
-    parser.add_argument("--offset", type=nonnegative_int, default=0)
-    parser.add_argument("--split", help="Override Hugging Face dataset split")
-    parser.add_argument("--seed", type=nonnegative_int, default=123)
-    parser.add_argument("--device", default="auto", help="auto, cpu, or cuda:N")
-    parser.add_argument("--do-sample", action=argparse.BooleanOptionalAction, default=None,
-                        help="Override YAML decoding policy; --no-do-sample selects greedy decoding")
-    return parser
 
 
 
@@ -178,14 +142,52 @@ def run(args):
     return output_path
 
 
-def main():
+@click.command(context_settings=CLI_SETTINGS)
+@click.option("--model", required=True, metavar="MODEL_KEY",
+              help="Model key in --model-config. Bundled keys: "
+                   + configured_keys_help(ROOT / "model_configs.yaml", "models")
+                   + ". Custom YAML keys are also accepted.")
+@click.option("--dataset", required=True, metavar="DATASET_KEY",
+              help="Dataset key in --dataset-config. Bundled keys: "
+                   + configured_keys_help(ROOT / "datasets.yaml", "datasets")
+                   + ". Custom YAML keys are also accepted.")
+@click.option("--quantization", type=QUANTIZATION, default="bf16",
+              help="bf16: unquantized BF16; int8: bitsandbytes LLM.int8; int4: NF4 weights.")
+@click.option("--model-config", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              default=ROOT / "model_configs.yaml", help="Readable YAML file defining model keys/settings.")
+@click.option("--dataset-config", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              default=ROOT / "datasets.yaml", help="Readable YAML file defining dataset keys/sources.")
+@click.option("--output", type=click.Path(path_type=Path), metavar="FILENAME.jsonl",
+              help="Filename only, without directories. Saved under data/output/<model>/<quantization>/. "
+                   "When omitted: <dataset>_seed<seed>.jsonl. Existing files are never overwritten.")
+@click.option("--batch-size", type=click.IntRange(min=1),
+              help="Prompts per batch. When omitted: model YAML batch_size (bundled default: 8).")
+@click.option("--max-new-tokens", type=click.IntRange(min=1),
+              help="Maximum generated tokens per response. When omitted: model YAML (bundled default: 200).")
+@click.option("--max-input-tokens", type=click.IntRange(min=1),
+              help="Opt in to prompt truncation at this token count. When omitted: no truncation.")
+@click.option("--limit", type=click.IntRange(min=1),
+              help="Maximum number of dataset rows to process. When omitted: all remaining rows.")
+@click.option("--offset", type=click.IntRange(min=0), default=0,
+              help="Number of original dataset rows to skip before selection (zero-based offset).")
+@click.option("--split", metavar="HF_SPLIT",
+              help="Hugging Face split name or expression, e.g. train, test, validation, train[:100]. "
+                   "Must exist in the selected dataset. When omitted: dataset YAML split (default: train). "
+                   "Unused for CSV input.")
+@click.option("--seed", type=click.IntRange(min=0), default=123, help="Random seed for generation.")
+@click.option("--device", default="auto", callback=validate_device, metavar="DEVICE",
+              help="auto: CUDA if available, otherwise CPU; cpu; cuda; or cuda:N (e.g. cuda:0). "
+                   "INT8/INT4 require CUDA.")
+@click.option("--do-sample/--no-do-sample", default=None,
+              help="Enable sampling or select greedy decoding. If neither flag is given, inherit "
+                   "the model YAML do_sample setting (bundled default: enabled).")
+def main(**options):
+    """Generate completions for one model, dataset, and precision without evaluating them."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    parser = build_parser()
-    args = parser.parse_args()
     try:
-        run(args)
-    except (ValueError, FileNotFoundError, FileExistsError, ImportError) as exc:
-        parser.exit(1, f"Error: {exc}\n")
+        return run(SimpleNamespace(**options))
+    except (ValueError, OSError, ImportError) as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 if __name__ == "__main__":
