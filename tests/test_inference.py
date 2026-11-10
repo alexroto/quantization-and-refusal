@@ -6,7 +6,7 @@ import types
 import unittest
 from unittest.mock import MagicMock, patch
 
-from experiment_1.run_inference import main as inference_cli, resolve_output_path, run
+from experiment_1.run_inference import InferenceOptions, main as inference_cli, resolve_output_path, run
 from utils.dataset_utils import DatasetConfig, load_dataset_config, load_prompt_records
 from utils.generation_utils import generate_responses
 from utils.model_config import ModelConfig, load_model_config
@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def parse_options(arguments):
     with inference_cli.make_context("run-inference", arguments) as context:
-        return types.SimpleNamespace(**context.params)
+        return InferenceOptions(**context.params)
 
 
 class ConfigAndDatasetTests(unittest.TestCase):
