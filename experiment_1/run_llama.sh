@@ -1,15 +1,6 @@
-python -m experiment_1.run_inference --model llama2 --dataset harmful --quantization bf16 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset harmless --quantization bf16 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset adverserial --quantization bf16 --no-do-sample
+#!/usr/bin/env bash
+# Launch the llama2 inference sequence in a detached tmux session.
+set -euo pipefail
 
-python -m experiment_1.run_inference --model llama2 --dataset harmless_with_sensitive_words --quantization int8 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset harmful --quantization int8 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset harmless --quantization int8 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset adverserial --quantization int8 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset harmless_with_sensitive_words --quantization int8 --no-do-sample
-
-python -m experiment_1.run_inference --model llama2 --dataset harmless_with_sensitive_words --quantization int4 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset harmful --quantization int4 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset harmless --quantization int4 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset adverserial --quantization int4 --no-do-sample
-python -m experiment_1.run_inference --model llama2 --dataset harmless_with_sensitive_words --quantization int4 --no-do-sample
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$script_dir/run_model.sh" llama2

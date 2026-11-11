@@ -152,3 +152,29 @@ python -m experiment_1.run_inference --help
 `-h` is also supported. Invalid enum values and out-of-range numbers are rejected
 before the command starts inference. Model/dataset help lists bundled YAML keys;
 custom config keys remain accepted.
+
+## Run model sequences in tmux
+
+With `tmux` installed on the pod, launch a model from the web terminal:
+
+```bash
+bash experiment_1/run_llama.sh
+# Or: bash experiment_1/run_qwen.sh
+# Or: bash experiment_1/run_vicuna.sh
+```
+
+Each launcher starts a detached tmux session on a separate server for that model.
+The launcher prints the attach command and log directory. For Llama 2:
+
+```bash
+tmux -L quantization-llama2 attach -t llama2
+```
+
+Press `Ctrl-b`, then `d` to detach. All 12 jobs run one at a time in the
+same session. A failed job is logged and the remaining jobs continue. The
+sequence keeps running while the pod is up, even if your browser disconnects.
+The session closes when the sequence finishes.
+
+Per-job logs and `summary.log` are saved under
+`data/output/<model>/logs/<run-id>/`. The launcher inherits your Python
+environment and exported `HF_TOKEN`. Set `PYTHON_BIN` to override `python`.
