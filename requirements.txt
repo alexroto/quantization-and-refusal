@@ -189,3 +189,7 @@ yarl==1.25.1
 
 # CUDA quantization backend used for INT8 and NF4 inference.
 bitsandbytes>=0.43.3,<1
+
+# OpenAI Responses API judge and its structured verdict schema.
+openai>=1.75,<3
+pydantic>=2,<3

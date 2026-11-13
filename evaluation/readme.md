@@ -79,3 +79,21 @@ python -m evaluation.harmful_content_evaluation --help
 `-h` is also supported. Invalid enum values and out-of-range numbers are rejected
 before the command starts inference. Model help lists bundled YAML keys; custom generated model directory keys
 remain accepted.
+
+## OpenAI judge
+
+Set `OPENAI_API_KEY` in your environment, then run:
+
+```bash
+python -m evaluation.llm_as_a_judge --model llama2 --dataset harmful --quantization int4 --workers 4
+```
+
+This sends the saved prompt and completion for each row to the OpenAI Responses
+API. The judge sees neither the source model nor its precision. Use `--seed` or
+`--file` to select a different run and `--judge-model` to choose a compatible
+checkpoint. See `--help` for all options.
+
+Results are written to `data/output/<model>/<quantization>/judge/<input-filename>`.
+The original completions stay unchanged. Each result keeps the source fields and
+adds an `llm_judge` verdict or error. Any row errors cause a nonzero exit after
+the results are saved. Existing judge files are not overwritten.
